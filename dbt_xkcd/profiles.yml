@@ -1,0 +1,12 @@
+dbt_xkcd:
+  outputs:
+    dev:
+      type: postgres
+      host: postgres        
+      user: postgres
+      password: postgres
+      port: 5432
+      dbname: jet_xkcd_db
+      schema: analytics     
+      threads: 1
+  target: dev

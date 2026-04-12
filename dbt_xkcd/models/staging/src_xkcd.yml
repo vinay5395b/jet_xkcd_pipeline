@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: xkcd_raw
+    database: jet_xkcd_db
+    schema: public
+    tables:
+      - name: xkcd_comics
+        description: "Raw comic data ingested from the XKCD API."
+        columns:
+          - name: num
+            description: "The primary key / comic number."
+            tests:
+              - unique
+              - not_null
