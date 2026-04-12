@@ -1,0 +1,13 @@
+# Airflow/Docker noise
+logs/
+plugins/
+postgres_data/
+
+# Python noise
+__pycache__/
+*.pyc
+venv/
+.env
+
+# OS noise
+.DS_Store
