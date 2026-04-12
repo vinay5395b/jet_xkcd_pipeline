@@ -1,9 +1,9 @@
 version: 2
 
 sources:
-  - name: xkcd_raw
+  - name: xkcd
     database: jet_xkcd_db
-    schema: public
+    schema: raw
     tables:
       - name: xkcd_comics
         description: "Raw comic data ingested from the XKCD API."

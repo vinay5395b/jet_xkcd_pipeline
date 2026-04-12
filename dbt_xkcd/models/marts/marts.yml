@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: dim_xkcd_comics
+    columns:
+      - name: comic_id
+        tests:
+          - unique
+          - not_null
+
+  - name: fct_xkcd_performance
+    columns:
+      - name: comic_id
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('dim_xkcd_comics')
+              field: comic_id
+
+  - name: mart_monthly_release_stats
+    description: "Aggregated monthly performance metrics."
+
+  - name: mart_top_rated_comics
+    description: "Segmenting of comics based on rating and reach."

@@ -1,18 +1,42 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.sensors.python import PythonSensor
+from airflow.operators.bash import BashOperator
+from airflow.utils.task_group import TaskGroup
 from datetime import datetime, timedelta
 import requests
 import psycopg2
 from psycopg2.extras import execute_values
 
 def get_db_connection():
+
     return psycopg2.connect(
         host="postgres",
         database="jet_xkcd_db",
         user="postgres",
         password="postgres"
     )
+
+def setup_database():
+   
+    conn = get_db_connection()
+    conn.autocommit = True
+    cur = conn.cursor()
+    
+    print("--- Initializing Database Objects ---")
+    cur.execute("CREATE SCHEMA IF NOT EXISTS raw;")
+    cur.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS raw.xkcd_comics (
+            num INTEGER PRIMARY KEY,
+            month TEXT, link TEXT, year TEXT, news TEXT,
+            safe_title TEXT, transcript TEXT, alt TEXT,
+            img TEXT, title TEXT, day TEXT,
+            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    cur.close()
+    conn.close()
 
 def backfill_xkcd():
 
@@ -158,7 +182,6 @@ def check_for_new_comic():
 with DAG(
     dag_id='xkcd_master_pipeline',
     start_date=datetime(2026, 1, 1),
-    # Monday, Wednesday, Friday at 12:00 PM (or whenever they usually post)
     schedule_interval='0 12 * * 1,3,5', 
     catchup=False,
     default_args={
@@ -167,19 +190,49 @@ with DAG(
     }
 ) as dag:
 
-    # 1. The Poller: This stays "Running" until a new comic is found
+    # 1. NEW: Initialize Database (The Foundation)
+    # This prevents the Sensor from failing on a missing table.
+    init_db = PythonOperator(
+        task_id='init_db_objects',
+        python_callable=setup_database # Make sure this function is defined above
+    )
+
+    # 2. The Poller: Only runs after we know the table exists
     wait_for_comic = PythonSensor(
         task_id='wait_for_new_comic',
         python_callable=check_for_new_comic,
-        poke_interval=600, # Check every 10 minutes
-        timeout=3600 * 12, # Give up after 12 hours if no comic is posted
-        mode='reschedule'  # Frees up worker slots between checks
+        poke_interval=600, 
+        timeout=3600 * 12, 
+        mode='reschedule'  
     )
 
-    # 2. The Ingestor: Same logic as before (handles backfill + new records)
+    # 3. The Ingestor: Fetches the data once the sensor finds something new
     ingest_data = PythonOperator(
         task_id='ingest_xkcd_data',
-        python_callable=backfill_xkcd # Your existing function
+        python_callable=backfill_xkcd 
     )
 
-    wait_for_comic >> ingest_data
+    # 4. Transformation & Quality Control
+    with TaskGroup(group_id='dbt_pipeline') as dbt_pipeline:
+        
+        dbt_run = BashOperator(
+            task_id='dbt_run',
+            bash_command='cd /opt/airflow/dbt_xkcd && dbt run --profiles-dir .',
+        )
+
+        dbt_test = BashOperator(
+            task_id='dbt_test',
+            bash_command='cd /opt/airflow/dbt_xkcd && dbt test --profiles-dir .',
+        )
+
+        dbt_run >> dbt_test
+
+    # 5. Documentation update
+    generate_docs = BashOperator(
+        task_id='dbt_generate_docs',
+        bash_command='cd /opt/airflow/dbt_xkcd && dbt docs generate --profiles-dir .',
+    )
+
+    # FINAL SERIALIZATION:
+    # 1. Create Table -> 2. Wait for New Data -> 3. Fetch Data -> 4. Transform & Test -> 5. Docs
+    init_db >> wait_for_comic >> ingest_data >> dbt_pipeline >> generate_docs

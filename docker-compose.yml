@@ -8,6 +8,8 @@ services:
       - POSTGRES_DB=jet_xkcd_db
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d jet_xkcd_db"]
       interval: 5s
@@ -30,6 +32,7 @@ services:
       - ./dbt_xkcd:/opt/airflow/dbt_xkcd
     ports:
       - "8080:8080"
+      - "8081:8081"
     command: >
       bash -c "airflow db init && sleep 5 && 
       airflow users create -u admin -f jet -l xkcd -r Admin -e admin@example.com -p admin || 
