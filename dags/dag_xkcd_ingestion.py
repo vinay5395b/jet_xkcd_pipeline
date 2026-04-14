@@ -3,8 +3,10 @@ from airflow.operators.python import PythonOperator
 from airflow.sensors.python import PythonSensor
 from airflow.operators.bash import BashOperator
 from airflow.utils.task_group import TaskGroup
+import json
 from datetime import datetime, timedelta
 import requests
+import time
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -25,7 +27,7 @@ def setup_database():
     
     print("--- Initializing Database Objects ---")
     cur.execute("CREATE SCHEMA IF NOT EXISTS raw;")
-    cur.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
+    # cur.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
     cur.execute("""
         CREATE TABLE IF NOT EXISTS raw.xkcd_comics (
             num INTEGER PRIMARY KEY,
@@ -39,61 +41,60 @@ def setup_database():
     conn.close()
 
 def backfill_xkcd():
-
-    # 1. Setup Connection with Autocommit
-    conn = psycopg2.connect(
-        host="postgres",
-        database="jet_xkcd_db",
-        user="postgres",
-        password="postgres"
-    )
+    conn = get_db_connection()
     conn.autocommit = True 
     cur = conn.cursor()
-    
-    # 2. Ensure Schema and Fresh Table
-    cur.execute("CREATE SCHEMA IF NOT EXISTS raw;")
-    cur.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
-    # We use the full list of columns expected from the API
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS raw.xkcd_comics (
-            num INTEGER PRIMARY KEY,
-            month TEXT, link TEXT, year TEXT, news TEXT,
-            safe_title TEXT, transcript TEXT, alt TEXT,
-            img TEXT, title TEXT, day TEXT,
-            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
-    
-    # 3. Get the Latest ID from API
-    latest_resp = requests.get("https://xkcd.com/info.0.json")
-    latest_id = latest_resp.json()['num']
-    
-    # 4. Find where we left off
-    cur.execute("SELECT MAX(num) FROM raw.xkcd_comics;")
-    result = cur.fetchone()[0]
-    start_id = result if result else 0
-    
-    print(f"Starting ingestion from #{start_id + 1} to #{latest_id}")
 
-    # 5. Ingesting all historical data once (backfilling)
-    for comic_id in range(start_id + 1, latest_id + 1):
-        if comic_id == 404: continue # Skip the 404 joke
+    # 1. Get the latest ID from the API
+    latest_id = requests.get("https://xkcd.com/info.0.json").json()['num']
+
+    # 2. Get EVERY ID currently in the database to find holes
+    cur.execute("SELECT num FROM raw.xkcd_comics;")
+    existing_ids = {row[0] for row in cur.fetchall()}
+
+    print(f"Latest API ID is {latest_id}. You have {len(existing_ids)} records.")
+    print("Checking for missing comics...")
+
+    # 3. Iterate through the full range 1 to Latest
+    for comic_id in range(1, latest_id + 1):
+        if comic_id == 404: continue 
+        
+        # SKIP if we already have it
+        if comic_id in existing_ids:
+            continue
             
+        # FETCH if it's missing
         try:
             r = requests.get(f"https://xkcd.com/{comic_id}/info.0.json", timeout=10)
+           
             if r.status_code == 200:
                 data = r.json()
                 
-                # We extract keys and values dynamically
-                columns = data.keys()
-                values = [data[col] for col in columns]
                 
-                placeholders = ",".join(["%s"] * len(columns))
-                insert_query = f"INSERT INTO raw.xkcd_comics ({','.join(columns)}) VALUES ({placeholders}) ON CONFLICT (num) DO NOTHING"
+                target_columns = [
+                    'num', 'month', 'link', 'year', 'news', 'safe_title', 
+                    'transcript', 'alt', 'img', 'title', 'day'
+                ]
                 
+               
+                values = []
+                for col in target_columns:
+                    val = data.get(col) 
+                    
+                    # use our dict fix just in case one of our target fields changes type ()
+                    if isinstance(val, (dict, list)):
+                        val = json.dumps(val)
+                    values.append(val)
+                
+                # 3. Insert only our targeted columns
+                placeholders = ",".join(["%s"] * len(target_columns))
+                insert_query = f"""
+                    INSERT INTO raw.xkcd_comics ({','.join(target_columns)}) 
+                    VALUES ({placeholders}) 
+                    ON CONFLICT (num) DO NOTHING
+                """
                 cur.execute(insert_query, values)
-                if comic_id % 50 == 0: # Print progress every 50
-                    print(f"Progress: Ingested up to #{comic_id}")
+                print(f"Successfully filled gap: #{comic_id}")
                     
         except Exception as e:
             print(f"Error on #{comic_id}: {e}")
@@ -101,7 +102,6 @@ def backfill_xkcd():
 
     cur.close()
     conn.close()
-    print("Full backfill complete!")
 
 # def backfill_xkcd():
     conn = psycopg2.connect(
@@ -116,6 +116,8 @@ def backfill_xkcd():
     # FORCE THESE FIRST
     print("--- Executing Schema Creation ---")
     cur.execute("CREATE SCHEMA IF NOT EXISTS raw;")
+    cur.execute("CREATE SCHEMA IF NOT EXISTS staging;")      
+    #cur.execute("CREATE SCHEMA IF NOT EXISTS intermediate;") 
     cur.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
     
     # Try to get the latest ID
@@ -165,9 +167,9 @@ def check_for_new_comic():
     conn = get_db_connection()
     cur = conn.cursor()
     
-    # Get local max
-    cur.execute("SELECT MAX(num) FROM raw.xkcd_comics;")
-    local_max = cur.fetchone()[0] or 0
+    # Check actual count instead of just the ceiling
+    cur.execute("SELECT COUNT(*) FROM raw.xkcd_comics;")
+    local_count = cur.fetchone()[0]
     
     # Get API max
     latest_resp = requests.get("https://xkcd.com/info.0.json")
@@ -176,8 +178,9 @@ def check_for_new_comic():
     cur.close()
     conn.close()
     
-    # If API has a higher number, the sensor "succeeds" and the next task runs
-    return api_max > local_max
+    # If we have fewer records than the API max, something is missing!
+    # (Subtracting 1 because of the 404 comic gap)
+    return local_count < (api_max - 1)
 
 with DAG(
     dag_id='xkcd_master_pipeline',

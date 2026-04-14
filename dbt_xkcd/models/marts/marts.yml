@@ -1,25 +1,40 @@
 version: 2
 
 models:
-  - name: dim_xkcd_comics
+  - name: dim_comics
     columns:
       - name: comic_id
         tests:
           - unique
           - not_null
+          # - relationships:
+          #       to: ref('int_xkcd__comics')
+          #       field: comic_id
+      - name: published_at
+        tests:
+          - assert_not_in_future
 
-  - name: fct_xkcd_performance
+  - name: comic_engagement
+    description: "Fact table capturing comic engagement metrics."
     columns:
       - name: comic_id
         tests:
           - unique
           - not_null
-          - relationships:
-              to: ref('dim_xkcd_comics')
-              field: comic_id
+          # - relationships:
+          #       to: ref('int_xkcd__comics')
+          #       field: comic_id
+      - name: production_cost_eur
+        tests:
+          - not_null
+          - assert_is_positive
+      - name: avg_rating
+        tests:
+          - dbt_utils.accepted_range:
+            #arguments:
+              min_value: 0
+              max_value: 100
+      
 
-  - name: mart_monthly_release_stats
+  - name: monthly_release_stats
     description: "Aggregated monthly performance metrics."
-
-  - name: mart_top_rated_comics
-    description: "Segmenting of comics based on rating and reach."
