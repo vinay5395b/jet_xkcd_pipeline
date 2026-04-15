@@ -25,7 +25,7 @@ Dependencies: Verify the requirements.txt is updated to bridge the gap between i
 2. Launching Infrastructure
 The system uses Docker to spin up the entire ecosystem—Database, Airflow, and dbt—simultaneously to ensure environment parity.
 
-Build and Deploy: Execute the following command in the project root:
+Build and Deploy: Execute the following command in the project root, this will build images and start the containers:
 
 docker-compose up -d --build
 
@@ -52,6 +52,15 @@ API Sensor: Validates the availability of new data.
 Ingestion Logic: Fetches metadata and fills gaps in the dataset.
 
 dbt Transformation: Executes the Refinery layer and Hashing logic.
+
+Staging Layer -> Raw data replica for dbt models
+
+Intermediate layer -> views with transformation logic 
+
+Marts Layer (BI and reporting):
+- dim_comics
+- comic_engagement
+- monthly_release_stats
 
 Quality Check: Performs automated data integrity tests.
 
