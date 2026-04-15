@@ -1,5 +1,7 @@
 Project Implementation Guide: The XKCD Analytics Engine
 
+Link to Repository: https://github.com/vinay5395b/jet_xkcd_pipeline.git
+
 1. Environment Preparation
 
 Before launching the infrastructure, ensure the project directory is structured for portability and modularity.
@@ -64,7 +66,4 @@ Verify that the views_count and avg_rating columns are populated with determinis
 
 Lineage & Docs: Access the generated dbt documentation to review the transformation flow from raw JSON to the final analytics marts.
 
-
-Technical Summary
-This deployment strategy utilizes a Docker-first approach to eliminate "works on my machine" inconsistencies. By encapsulating the warehouse, orchestrator, and transformation layers, the project remains a portable and reproducible asset suitable for productionized settings.
 
