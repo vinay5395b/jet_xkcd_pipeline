@@ -1,135 +1,70 @@
-XKCD Data Pipeline (ELT)
+Project Implementation Guide: The XKCD Analytics Engine
 
-This project implements an automated pipeline to fetch XKCD comic metadata and store it in a PostgreSQL Data Warehouse. It uses Airflow for orchestration and Docker for environment consistency.
+1. Environment Preparation
+
+Before launching the infrastructure, ensure the project directory is structured for portability and modularity.
+
 Prerequisites
+Docker & Docker Compose: 
+- Installed and running.
 
-    Docker Desktop installed.
+Directory Structure:
+/dags: Contains the Airflow orchestration logic.
+/dbt: Contains the dbt project and models.
 
-    Git installed.
+requirements.txt: Includes required libraries.
+docker-compose.yml: Defines the service architecture.
 
-Setup & Installation
-
-    Clone the repository:
-    Bash
-
-    git clone <your-repo-url>
-    cd jet_xkcd_pipeline
-
-    Launch the environment:
-    This command builds the Airflow image, initializes the database, and creates the default admin user.
-    Bash
-
-    docker compose up -d
-
-    Verify Containers:
-    Ensure all three containers are running:
-    Bash
-
-    docker ps
-
-Usage
-
-    Access Airflow:
-    Navigate to http://localhost:8080 in your browser.
-
-        Username: admin
-
-        Password: admin
-
-    Trigger Ingestion:
-
-        Locate the DAG xkcd_master_ingestion.
-
-        Toggle the switch to On.
-
-        Click the Play button to trigger the manual backfill.
-
-    Monitor Progress:
-
-        Click on the running task and select Logs to see the comics being fetched in real-time.
-    
-    Automation for new data:
-
-        
-        Scheduling & Polling:
-
-        The pipeline is scheduled via CRON (0 12 * * 1,3,5) to run every Mon, Wed, and Fri.
-        A PythonSensor is implemented to poll the XKCD API. If a new comic is not yet available at the scheduled time, the sensor will retry every 10 minutes for up to 12 hours, ensuring data is captured as soon as it is published.
-
-Database Connection (for pgAdmin/DBeaver)
-
-To view the data externally, connect to the PostgreSQL instance using:
-
-    Host: localhost (or the container IP if using a bridge network)
-
-    Port: 5432
-
-    Database: jet_xkcd_db
-
-    Username: postgres
-
-    Password: postgres
-
-Project Structure
-
-    /dags: Contains the Airflow Python scripts for ingestion.
-
-    /scripts: Utility scripts for data handling.
-
-    docker-compose.yml: Defines the Airflow, Postgres, and Scheduler services.
-
-    Dockerfile: Custom Airflow image with necessary Python libraries (psycopg2, requests).
+Configuration:
+Credentials: Update profiles.yml for dbt. Set the host to the Postgres service name defined in your Docker network (e.g., db) rather than localhost.
+Dependencies: Verify the requirements.txt is updated to bridge the gap between ingestion scripts and the database environment.
 
 
+2. Launching Infrastructure
+The system uses Docker to spin up the entire ecosystem—Database, Airflow, and dbt—simultaneously to ensure environment parity.
 
----------------------------------------------------
+Build and Deploy: Execute the following command in the project root:
 
-1. Macro Infrastructure (The "Engine")
+docker-compose up -d --build
 
-    generate_mock_metrics: Implemented deterministic "Synthetic Data" logic.
 
-        generate_views: Uses hashtext to create stable engagement metrics.
+3. Command Center Access
+Infrastructure management and pipeline monitoring are handled through the Airflow UI.
 
-        generate_rating: Scales hash values to a 1.0–10.0 decimal range.
+URL: Navigate to http://localhost:8080.
+Authentication: Use the designated administrative credentials.
+Connection Management: Under Admin > Connections, verify that the postgres_default connection string is correctly mapped to the Postgres container.
 
-    get_alphanumeric_count: Centralized logic for string parsing, used to calculate business costs (Production Cost per char).
 
-    generate_schema_name: Overrode dbt's default behavior to enforce a clean Static Schema Strategy (staging, intermediate, analytics) without environment prefixes.
+4. Pipeline Execution
+The pipeline is designed as an automated "all-in-one" workflow.
 
-2. Data Quality & Testing
+Activation: Locate the XKCD Pipeline DAG and toggle the status to On.
 
-    Generic Tests: Moved from singular tests to a reusable tests/generic/ framework.
+Trigger: Initiate the run manually via the Trigger DAG button.
 
-        assert_range: Validates numeric boundaries (used for avg_rating).
+Workflow Monitoring: Monitor the Graph View for the following sequence:
 
-        assert_not_in_future: Prevents temporal data anomalies.
+API Sensor: Validates the availability of new data.
 
-        assert_is_positive: Ensures financial metrics like production_cost are valid.
+Ingestion Logic: Fetches metadata and fills gaps in the dataset.
 
-    Referential Integrity: Standardized relationships tests in the Marts layer to ensure comic_id consistency between Facts and Dimensions.
+dbt Transformation: Executes the Refinery layer and Hashing logic.
 
-3. Model Refactoring
+Quality Check: Performs automated data integrity tests.
 
-    int_xkcd__transformed / comic_engagement:
+Documentation: Generates the lineage graph and data dictionary.
 
-        Namespace Resolution: Removed select * in favor of explicit column selection to prevent column ambiguity and name collisions.
 
-        Normalization: Standardized text fields (trimming) and cast date strings into a proper DATE format (published_at).
+5. Verification & Deliverables
+After the workflow completes, verify the output to ensure the data is "Production-Ready."
 
-        Performance: Optimized CTE structures for Postgres execution.
+Warehouse Audit: Connect to the Postgres container (using DBeaver or psql) and query the analytics schema. 
+Verify that the views_count and avg_rating columns are populated with deterministic values.
 
-4. Warehouse Architecture
+Lineage & Docs: Access the generated dbt documentation to review the transformation flow from raw JSON to the final analytics marts.
 
-    Successfully implemented a 3-Tiered Schema Architecture:
 
-        staging: Raw-to-Staging views.
+Technical Summary
+This deployment strategy utilizes a Docker-first approach to eliminate "works on my machine" inconsistencies. By encapsulating the warehouse, orchestrator, and transformation layers, the project remains a portable and reproducible asset suitable for productionized settings.
 
-        intermediate: Complex transformations and metric calculations (Ephemeral views).
-
-        analytics: Final, clean Marts optimized for BI consumption.
-
-The "HM" Project Narrative
-
-If you are putting this in a README or explaining it in an interview, here is the narrative:
-
-    "After establishing the base pipeline, I performed a deep refactor to migrate from 'script-style' SQL to an Enterprise Data Framework. I decoupled business logic into reusable macros, implemented a custom schema strategy to maintain a clean warehouse namespace, and built a generic testing suite to enforce data contracts. This transition ensures the project is not just a collection of queries, but a scalable, maintainable data platform."

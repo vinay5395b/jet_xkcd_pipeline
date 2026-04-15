@@ -1,3 +1,5 @@
+{{ config(materialized='view') }}
+
 with base as (
     select * from {{ ref('stg_xkcd__comics') }}
 ),

@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 import requests
 import time
 import psycopg2
-from psycopg2.extras import execute_values
 
 def get_db_connection():
 
@@ -103,61 +102,6 @@ def backfill_xkcd():
     cur.close()
     conn.close()
 
-# def backfill_xkcd():
-    conn = psycopg2.connect(
-        host="postgres",
-        database="jet_xkcd_db",
-        user="postgres",
-        password="postgres"
-    )
-    conn.autocommit = True 
-    cur = conn.cursor()
-    
-    # FORCE THESE FIRST
-    print("--- Executing Schema Creation ---")
-    cur.execute("CREATE SCHEMA IF NOT EXISTS raw;")
-    cur.execute("CREATE SCHEMA IF NOT EXISTS staging;")      
-    #cur.execute("CREATE SCHEMA IF NOT EXISTS intermediate;") 
-    cur.execute("CREATE SCHEMA IF NOT EXISTS analytics;")
-    
-    # Try to get the latest ID
-    try:
-        latest_resp = requests.get("https://xkcd.com/info.0.json", timeout=10)
-        latest_id = latest_resp.json()['num']
-    except Exception as e:
-        print(f"API Error: {e}")
-        latest_id = 3000 # Fallback for testing if API is down
-    
-    # Create Table
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS raw.xkcd_comics (
-            num INTEGER PRIMARY KEY,
-            month TEXT, link TEXT, year TEXT, news TEXT,
-            safe_title TEXT, transcript TEXT, alt TEXT,
-            img TEXT, title TEXT, day TEXT,
-            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
-
-    # Check how many we have
-    cur.execute("SELECT COUNT(*) FROM raw.xkcd_comics;")
-    count = cur.fetchone()[0]
-    print(f"Current count in DB: {count}")
-
-    # For testing: just fetch the first 5 comics to prove it works
-    for comic_id in range(1, 6):
-        r = requests.get(f"https://xkcd.com/{comic_id}/info.0.json")
-        if r.status_code == 200:
-            data = r.json()
-            columns = data.keys()
-            values = [data[col] for col in columns]
-            placeholders = ",".join(["%s"] * len(columns))
-            query = f"INSERT INTO raw.xkcd_comics ({','.join(columns)}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
-            cur.execute(query, values)
-            print(f"Manually ingested #{comic_id}")
-
-    cur.close()
-    conn.close()
 
 def check_for_new_comic():
     """
@@ -204,7 +148,7 @@ with DAG(
     wait_for_comic = PythonSensor(
         task_id='wait_for_new_comic',
         python_callable=check_for_new_comic,
-        poke_interval=600, 
+        poke_interval=3600,
         timeout=3600 * 12, 
         mode='reschedule'  
     )
@@ -237,5 +181,5 @@ with DAG(
     )
 
     # FINAL SERIALIZATION:
-    # 1. Create Table -> 2. Wait for New Data -> 3. Fetch Data -> 4. Transform & Test -> 5. Docs
+    # 1. Create Table/Schema -> 2. Wait for New Data -> 3. Fetch Data -> 4. Transform & Test -> 5. Docs
     init_db >> wait_for_comic >> ingest_data >> dbt_pipeline >> generate_docs
