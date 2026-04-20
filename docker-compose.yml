@@ -7,7 +7,7 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=jet_xkcd_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -31,12 +31,11 @@ services:
       - ./logs:/opt/airflow/logs
       - ./dbt_xkcd:/opt/airflow/dbt_xkcd
     ports:
-      - "8080:8080"
-      - "8081:8081"
+      - "8085:8080"
+      - "8082:8081"
     command: >
-      bash -c "airflow db init && sleep 5 && 
-      airflow users create -u admin -f jet -l xkcd -r Admin -e admin@example.com -p admin || 
-      airflow users reset-password -u admin -p admin && 
+      bash -c "
+      airflow users create -u admin -f jet -l xkcd -r Admin -e admin@example.com -p admin || true &&
       airflow webserver"
 
   airflow-scheduler:

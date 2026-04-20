@@ -13,6 +13,7 @@ def get_db_connection():
 
     return psycopg2.connect(
         host="postgres",
+        port="5432",
         database="jet_xkcd_db",
         user="postgres",
         password="postgres"
