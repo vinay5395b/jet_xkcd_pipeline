@@ -32,7 +32,7 @@ Build and Deploy: Execute the following command in the project root, this will b
 3. Command Center Access
 Infrastructure management and pipeline monitoring are handled through the Airflow UI.
 
-URL: Navigate to http://localhost:8080.
+URL: Navigate to http://localhost:8085.
 Authentication: Use the designated administrative credentials.
 Connection Management: Under Admin > Connections, verify that the postgres_default connection string is correctly mapped to the Postgres container.
 
